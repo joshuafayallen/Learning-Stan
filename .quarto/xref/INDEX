@@ -34,5 +34,14 @@
   },
   "bayes-rules/logit/logit.qmd": {
     "logit.html": "7e6fb7ae"
+  },
+  "bayes-rules/index.qmd": {
+    "index.html": "fa9d4b26"
+  },
+  "rethinking/index.qmd": {
+    "index.html": "023a1ba6"
+  },
+  "bayes-rules/count-models/count-models.qmd": {
+    "count-models.html": "1811c1ef"
   }
 }

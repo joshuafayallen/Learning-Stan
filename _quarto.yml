@@ -10,6 +10,32 @@ website:
       - about.qmd
       - text: Statistical Rethinking
         file: rethinking/index.qmd
+      - text: Bayes Rules
+        file: bayes-rules/index.qmd
+
+  sidebar: 
+   - title: "Statistical Rethinking"
+     style: 'floating'
+     contents: 
+        - rethinking/index.qmd
+        - section: "OLS"
+          contents: 
+          - rethinking/linear-regression/linear-regression-in-stan.qmd
+        - section: 'Logit'
+          contents: 
+          - rethinking/logit/logit.qmd
+        - section: 'Multilevel Models'
+          contents: rethinking/multilevel-models/multilevel-models.qmd
+
+   - title: 'Bayes Rules'
+     contents: 
+      - bayes-rules/index.qmd
+      - section: "Reading Note"
+        contents: 
+         - bayes-rules/linear-regression/ols.qmd
+         - bayes-rules/logit/logit.qmd
+         - bayes-rules/count-models/count-models.qmd
+        
 
 
 format:

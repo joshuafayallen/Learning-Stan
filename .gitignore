@@ -3,3 +3,4 @@
 *.rdb
 *.RData
 *.DS_Store
+/.quarto/
