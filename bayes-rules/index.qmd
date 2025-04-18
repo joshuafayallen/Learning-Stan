@@ -1,0 +1,6 @@
+---
+title: "Bayes Rules"
+format: html
+---
+
+This is me following along with [Andrew Heiss's Bayes Rules code](https://bayesf22-notebook.classes.andrewheiss.com/bayes-rules/) and redoing as much as I can in `cmdstanr`

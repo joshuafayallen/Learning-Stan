@@ -1,0 +1,103 @@
+---
+title: "Count Models in Cmd Stan"
+format: html
+---
+
+
+```{r}
+library(bayesrules)
+library(tidyverse)
+library(brms)
+library(cmdstanr)
+library(broom.mixed)
+library(tidybayes)
+library(ggdist)
+library(patchwork)
+library(ggtext)
+
+
+data(equality_index, package = "bayesrules")
+
+equality <- equality_index |>
+  # Omit California because it has so many laws already
+  filter(state != "california")
+
+stan_dat <- model.matrix(~ 1 + percent_urban + historical, data = equality)[,
+  -1
+]
+
+```
+
+
+Well its fun that we have one example to work off of. So lets start there 
+
+
+
+```{r}
+
+first_count <- "
+data {
+int <lower = 0> n;
+int <lower = 0> k;
+matrix[n,k] x;
+array[n] int laws;
+}
+parameters {
+real alpha;
+vector[k] beta;
+
+}
+model {
+
+laws ~ poisson_log_glm(x, alpha, beta);
+alpha ~ normal(2, 0.5 );
+beta[1] ~ student_t(2, 0, 1);
+beta[2] ~ student_t(2, -0.5, 2);
+beta[3] ~ student_t(2, 0, 2);
+
+
+}
+generated quantities {
+array[n] int y_rep;
+vector[n] log_lik;
+vector[n] lambda_hat = alpha  + x * beta;
+for(i in 1:n){
+
+log_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);
+
+y_rep[i] = poisson_log_rng(lambda_hat[i]);
+
+}
+
+
+}
+"
+
+write_stan_file(
+  first_count,
+  "bayes-rules/count-models/stan-scripts/",
+  basename = "first-count"
+)
+
+count_mod1 <- cmdstan_model(
+  "bayes-rules/count-models/stan-scripts/first-count.stan"
+)
+
+fitted_mod <- count_mod1$sample(
+  data = list(
+    n = nrow(equality),
+    laws = equality$laws,
+    x = stan_dat,
+    k = ncol(stan_dat)
+  )
+)
+
+
+fitted_mod$summary()
+
+```
+
+
+Ehh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can't do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn't hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros. 
+
+The example that Andrew uses just uses the 

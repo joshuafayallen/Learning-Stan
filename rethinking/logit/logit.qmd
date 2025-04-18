@@ -1,0 +1,266 @@
+---
+title: "Logit in CmdStanr"
+format: html
+---
+
+For the glms we have to lean a little more on the array syntax to get our work done. 
+
+
+```{r}
+
+set.seed(1994)
+
+library(cmdstanr)
+library(tidybayes)
+library(ggdist)
+library(posterior)
+library(tidyverse)
+
+data("chimpanzees", package = "rethinking")
+
+clean_chimp <- chimpanzees |>
+  mutate(
+    treatment = factor(1 + prosoc_left + 2 * condition),
+    labels = factor(
+      treatment,
+      levels = 1:4,
+      labels = c("r/n", "l/n", "r/p", "l/p")
+    )
+  )
+
+```
+
+
+Cool lets prep the model. Really anytime we use something that is not a number we can use the array syntax. The `n_variable` pops up in the parameters argument. So you have to marry the `n_variable` with the parameter. 
+
+
+
+```{r}
+
+preds_data <- clean_chimp |>
+  distinct(actor, prosoc_left, condition, treatment, labels)
+
+stan_data <- clean_chimp |>
+  select(actor, treatment, pulled_left) |>
+  compose_data(
+    n_actor = n_distinct(actor),
+    n_treatment = n_distinct(treatment),
+    n_pred = nrow(preds_data),
+    pred_actor = preds_data$treatment,
+    pred_treatment = preds_data$treatment
+  )
+
+glm_model <- "
+data {
+int <lower=1> n;
+int <lower=1> n_pred;
+int <lower=1> n_treatment;
+int <lower=1> n_actor;
+array[n] int actor;
+array[n] int treatment;
+array[n_pred] int pred_treatment;
+array[n_pred] int pred_actor;
+array[n] int<lower =0, upper=1> pulled_left;
+
+}
+
+parameters {
+vector[n_actor] alpha;
+vector[n_treatment] beta;
+
+}
+
+model {
+pulled_left ~ binomial(1, inv_logit(alpha[actor] + beta[treatment]));
+
+alpha ~ normal(0, 1.5);
+
+beta ~ normal(0, 0.5);
+
+}
+
+generated quantities {
+
+vector[n] log_lik;
+vector[n_pred] preds;
+
+preds = inv_logit(alpha[pred_actor] + beta[pred_treatment]);
+
+for(i in 1:n) log_lik[i] = binomial_lpmf(pulled_left[i] | 1, inv_logit(alpha[actor[i]] + beta[treatment[i]]));
+
+
+}
+
+"
+
+write_stan_file(glm_model, dir = "logit/stan-scripts/", basename = "logit-mod")
+
+logit_mod <- cmdstan_model("logit/stan-scripts/logit-mod.stan")
+
+
+fitted_mod <- logit_mod$sample(data = stan_data, iter_sampling = 2000)
+
+```
+
+
+One thing that is worth doing more in vscode is writing the stan file separately because I specified a likelihood that was technically possible to specify but stan threw a lot of warnings. 
+
+
+
+```{r}
+
+draws_logit <- fitted_mod$draws(format = "df")
+
+
+p2 <- draws_logit |>
+  spread_draws(preds[i]) |>
+  left_join(
+    preds_data |>
+      mutate(i = 1:n()),
+    by = join_by(i)
+  ) |>
+  mutate(actor = str_c("actor ", actor), condition = factor(condition)) |>
+  group_by(actor, prosoc_left, condition, treatment, labels) |>
+  mean_qi(preds, .width = 0.89)
+
+
+ggplot(p2, aes(x = labels, y = preds)) +
+  geom_line(aes(group = prosoc_left), linewidth = 0.25) +
+  geom_pointinterval(
+    aes(, ymin = .lower, ymax = .upper, fill = condition),
+    linewidth = 1
+  ) +
+  facet_grid(vars("Posterior Predicitions"), vars(actor))
+
+```
+
+
+This model uses the inv_logit function which will just put things on the probability scale. 
+
+
+
+```{r}
+library(brms)
+
+p <- c(prior(normal(0, 1.5), nlpar = a), prior(normal(0, 0.5), nlpar = b))
+
+
+ex <- brm(
+  bf(
+    pulled_left | trials(1) ~ a + b,
+    a ~ 0 + actor,
+    b ~ 0 + treatment,
+    nl = TRUE
+  ),
+  data = clean_chimp,
+  prior = p,
+  family = binomial(),
+  iter = 2000
+)
+
+```
+
+If we look at the outputs from the model 
+
+
+```{r}
+
+cmd_mod <- fitted_mod$summary("beta") |>
+  as_tibble() |>
+  mutate(API = "CmdStanr") |>
+  select(estimate = mean, API, term = variable)
+
+brms_mod <- broom.mixed::tidy(ex) |>
+  filter(str_detect(term, "b")) |>
+  mutate(
+    API = "Brms"
+  ) |>
+  select(estimate, API, term) |>
+  bind_rows(cmd_mod)
+
+tinytable::tt(brms_mod)
+
+```
+
+
+
+If we rescale the parameter we get this 
+
+
+
+```{r}
+
+ex |>
+  broom.mixed::tidy() |>
+  filter(str_detect(term, "b")) |>
+  mutate(estimate = inv_logit_scaled(estimate), API = "Brms") |>
+  select(estimate, API, term) |>
+  bind_rows(cmd_mod) |>
+  tinytable::tt()
+
+```
+
+
+
+
+```{r}
+data("UCBadmit", package = "rethinking")
+
+clean_admit <- UCBadmit |>
+  mutate(
+    gid = ifelse(applicant.gender == "male", 1, 2),
+    gid = as.factor(gid),
+    case = row_number(),
+    case = as.factor(case)
+  )
+
+stan_admit_data <- clean_admit |>
+  select(dept, gid, admit, applications) |>
+  compose_data()
+
+
+admissions_mod <- "
+data {
+int <lower = 1> n;
+int <lower = 1> n_dept;
+int <lower = 1> n_gid;
+array[n] int gid;
+  array[n] int dept;
+  array[n] int applications;
+  array[n] int<lower=0> admit;
+
+}
+
+parameters {
+vector[n_gid] alpha;
+vector[n_dept] beta;
+
+}
+model {
+
+admit ~ binomial(applications, inv_logit(alpha[gid] + beta[dept]));
+
+gid ~ normal(0, 1.5);
+
+dept ~ normal(0, 1.5);
+
+
+}
+
+
+"
+
+write_stan_file(
+  admissions_mod,
+  "logit/stan-scripts/",
+  basename = "admissions-mod"
+)
+
+ad_mod <- cmdstan_model("logit/stan-scripts/admissions-mod.stan")
+
+fitted_ad_mod <- ad_mod$sample(
+  data = stan_admit_data,
+  iter_sampling = 4000
+)
+
+```

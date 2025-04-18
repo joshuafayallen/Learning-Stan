@@ -1,0 +1,6 @@
+---
+title: "Statistical Rethinking"
+format: html
+---
+
+This is me following along with [Solomon Kurz's translation of Statistical Rethinking](https://solomon.quarto.pub/sr2rstan/)

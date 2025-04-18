@@ -1,0 +1,105 @@
+---
+title: "Multilevel models in CmdStanr"
+format: html
+---
+
+
+```{r}
+library(tidybayes)
+library(posterior)
+library(cmdstanr)
+library(tidyverse)
+
+
+data('reedfrogs', package = 'rethinking')
+
+clean_frog = reedfrogs |>
+  mutate(tank = row_number())
+
+stan_dat = clean_frog |>
+  select(surv, density, tank) |>
+  compose_data()
+
+theme_set(theme_classic())
+
+```
+
+
+Now it is time to face what feels close to the final boss in stan. MLM's. 
+
+
+
+```{r}
+
+mlm_basic = '
+data { 
+int <lower=0> n;
+array[n] int tank;
+array[n] int density;
+array[n] int surv;
+
+}
+parameters { 
+
+///global tank variation
+real abar;
+real <lower=0> sigma;
+vector[n] alpha;
+
+}
+
+model { 
+
+surv ~ binomial(density, inv_logit(alpha[tank]));
+
+/// remember we are trying to learn abar and sigma
+alpha ~ normal(abar, sigma);
+sigma ~ exponential(1);
+
+}
+
+
+'
+
+
+write_stan_file(mlm_basic, 'multilevel-models/stan-scripts', 'mlm-basic')
+
+mod = cmdstan_model('multilevel-models/stan-scripts/mlm-basic.stan')
+
+fitted_mlm = mod$sample(
+  data = stan_dat
+)
+
+```
+
+
+Cool lets pull out the draws 
+
+
+```{r}
+first_draws = fitted_mlm$draws(format = 'df')
+
+fitted_mlm$summary(c('abar', 'sigma', 'alpha[1]', 'alpha[48]'))
+
+plot_dat = first_draws |>
+  spread_draws(alpha[tank]) |>
+  mutate(propsurv = plogis(alpha)) |>
+  group_by(tank) |>
+  mean_qi(propsurv) |>
+  left_join(
+    clean_frog |>
+      select(tank, density),
+    join_by(tank)
+  )
+
+
+ggplot(plot_dat, aes(x = tank, y = propsurv)) +
+  geom_pointinterval(
+    aes(ymin = .lower, ymax = .upper),
+    shape = 1,
+    linewidth = 0.25
+  ) +
+  geom_point(data = clean_frog, clolor = 'blue') +
+  facet_wrap(vars(density), scales = 'free_x')
+
+```

@@ -1,0 +1,56 @@
+---
+title: "Logits in Stan"
+format: html
+---
+
+
+
+```{r}
+library(bayesrules)
+library(tidyverse)
+library(brms)
+library(cmdstanr)
+library(rstanarm)
+library(marginaleffects)
+library(broom)
+library(broom.mixed)
+library(parameters)
+library(tidybayes)
+library(ggdist)
+library(patchwork)
+
+data(weather_perth, package = "bayesrules")
+
+weather <- weather_perth %>%
+  select(day_of_year, raintomorrow, humidity9am, humidity3pm, raintoday) |>
+  mutate(across(
+    c(humidity9am, humidity3pm),
+    ~ scale(., scale = FALSE),
+    .names = "{col}_centered"
+  )) |>
+  mutate(across(
+    c(humidity9am, humidity3pm),
+    ~ as.numeric(scale(., scale = FALSE)),
+    .names = "{col}_c"
+  )) |>
+  mutate(raintomorrow_num = as.numeric(raintomorrow) - 1)
+
+extract_attributes <- function(x) {
+  attributes(x) %>%
+    set_names(janitor::make_clean_names(names(.))) %>%
+    as_tibble() %>%
+    slice(1)
+}
+
+unscaled <- weather %>%
+  select(ends_with("_centered")) |>
+  summarize(across(everything(), ~ extract_attributes(.))) |>
+  pivot_longer(everything()) |>
+  unnest(value) |>
+  split(~name)
+
+```
+
+
+
+Okay 

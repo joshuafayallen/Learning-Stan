@@ -1,0 +1,15 @@
+{
+  "hash": "3b64102b38e84ec9ec019aaa635330b9",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Count Models in Cmd Stan\"\nformat: html\n---\n\n\n\n::: {.cell}\n\n```{.r .cell-code}\nlibrary(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(broom.mixed)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\nlibrary(ggtext)\n\n\ndata(equality_index, package = \"bayesrules\")\n\nequality <- equality_index |>\n  # Omit California because it has so many laws already\n  filter(state != \"california\")\n\nstan_dat <- model.matrix(~ 1 + percent_urban + historical, data = equality)[,\n  -1\n]\n```\n:::\n\n\n\nWell its fun that we have one example to work off of. So lets start there \n\n\n\n\n::: {.cell}\n\n```{.r .cell-code}\nfirst_count <- \"\ndata {\nint <lower = 0> n;\nint <lower = 0> k;\nmatrix[n,k] x;\narray[n] int laws;\n}\nparameters {\nreal alpha;\nvector[k] beta;\n\n}\nmodel {\n\nlaws ~ poisson_log_glm(x, alpha, beta);\nalpha ~ normal(2, 0.5 );\nbeta[1] ~ student_t(2, 0, 1);\nbeta[2] ~ student_t(2, -0.5, 2);\nbeta[3] ~ student_t(2, 0, 2);\n\n\n}\ngenerated quantities {\narray[n] int y_rep;\nvector[n] log_lik;\nvector[n] lambda_hat = alpha  + x * beta;\nfor(i in 1:n){\n\nlog_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);\n\ny_rep[i] = poisson_log_rng(lambda_hat[i]);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  first_count,\n  \"bayes-rules/count-models/stan-scripts/\",\n  basename = \"first-count\"\n)\n\ncount_mod1 <- cmdstan_model(\n  \"bayes-rules/count-models/stan-scripts/first-count.stan\"\n)\n\nfitted_mod <- count_mod1$sample(\n  data = list(\n    n = nrow(equality),\n    laws = equality$laws,\n    x = stan_dat,\n    k = ncol(stan_dat)\n  )\n)\n\n\nfitted_mod$summary()\n```\n:::\n\n\n\nEhh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can't do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn't hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros. \n\nThe example that Andrew uses just uses the \n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}
