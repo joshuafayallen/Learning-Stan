@@ -1,56 +1,5 @@
 [
   {
-    "objectID": "about.html",
-    "href": "about.html",
-    "title": "About",
-    "section": "",
-    "text": "About this site"
-  },
-  {
-    "objectID": "bayes-rules/count-models/count-models.html",
-    "href": "bayes-rules/count-models/count-models.html",
-    "title": "Count Models in Cmd Stan",
-    "section": "",
-    "text": "library(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(broom.mixed)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\nlibrary(ggtext)\n\n\ndata(equality_index, package = \"bayesrules\")\n\nequality &lt;- equality_index |&gt;\n  # Omit California because it has so many laws already\n  filter(state != \"california\")\n\nstan_dat &lt;- model.matrix(~ 1 + percent_urban + historical, data = equality)[,\n  -1\n]\n\nWell its fun that we have one example to work off of. So lets start there\n\nfirst_count &lt;- \"\ndata {\nint &lt;lower = 0&gt; n;\nint &lt;lower = 0&gt; k;\nmatrix[n,k] x;\narray[n] int laws;\n}\nparameters {\nreal alpha;\nvector[k] beta;\n\n}\nmodel {\n\nlaws ~ poisson_log_glm(x, alpha, beta);\nalpha ~ normal(2, 0.5 );\nbeta[1] ~ student_t(2, 0, 1);\nbeta[2] ~ student_t(2, -0.5, 2);\nbeta[3] ~ student_t(2, 0, 2);\n\n\n}\ngenerated quantities {\narray[n] int y_rep;\nvector[n] log_lik;\nvector[n] lambda_hat = alpha  + x * beta;\nfor(i in 1:n){\n\nlog_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);\n\ny_rep[i] = poisson_log_rng(lambda_hat[i]);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  first_count,\n  \"bayes-rules/count-models/stan-scripts/\",\n  basename = \"first-count\"\n)\n\ncount_mod1 &lt;- cmdstan_model(\n  \"bayes-rules/count-models/stan-scripts/first-count.stan\"\n)\n\nfitted_mod &lt;- count_mod1$sample(\n  data = list(\n    n = nrow(equality),\n    laws = equality$laws,\n    x = stan_dat,\n    k = ncol(stan_dat)\n  )\n)\n\n\nfitted_mod$summary()\n\nEhh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can’t do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn’t hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros.\nThe example that Andrew uses just uses the",
-    "crumbs": [
-      "Bayes Rules",
-      "Reading Note",
-      "Count Models in Cmd Stan"
-    ]
-  },
-  {
-    "objectID": "bayes-rules/index.html",
-    "href": "bayes-rules/index.html",
-    "title": "Bayes Rules",
-    "section": "",
-    "text": "This is me following along with Andrew Heiss’s Bayes Rules code and redoing as much as I can in cmdstanr",
-    "crumbs": [
-      "Bayes Rules"
-    ]
-  },
-  {
-    "objectID": "rethinking/logit/logit.html",
-    "href": "rethinking/logit/logit.html",
-    "title": "Logit in CmdStanr",
-    "section": "",
-    "text": "For the glms we have to lean a little more on the array syntax to get our work done.\n\nset.seed(1994)\n\nlibrary(cmdstanr)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(posterior)\nlibrary(tidyverse)\n\ndata(\"chimpanzees\", package = \"rethinking\")\n\nclean_chimp &lt;- chimpanzees |&gt;\n  mutate(\n    treatment = factor(1 + prosoc_left + 2 * condition),\n    labels = factor(\n      treatment,\n      levels = 1:4,\n      labels = c(\"r/n\", \"l/n\", \"r/p\", \"l/p\")\n    )\n  )\n\nCool lets prep the model. Really anytime we use something that is not a number we can use the array syntax. The n_variable pops up in the parameters argument. So you have to marry the n_variable with the parameter.\n\npreds_data &lt;- clean_chimp |&gt;\n  distinct(actor, prosoc_left, condition, treatment, labels)\n\nstan_data &lt;- clean_chimp |&gt;\n  select(actor, treatment, pulled_left) |&gt;\n  compose_data(\n    n_actor = n_distinct(actor),\n    n_treatment = n_distinct(treatment),\n    n_pred = nrow(preds_data),\n    pred_actor = preds_data$treatment,\n    pred_treatment = preds_data$treatment\n  )\n\nglm_model &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nint &lt;lower=1&gt; n_pred;\nint &lt;lower=1&gt; n_treatment;\nint &lt;lower=1&gt; n_actor;\narray[n] int actor;\narray[n] int treatment;\narray[n_pred] int pred_treatment;\narray[n_pred] int pred_actor;\narray[n] int&lt;lower =0, upper=1&gt; pulled_left;\n\n}\n\nparameters {\nvector[n_actor] alpha;\nvector[n_treatment] beta;\n\n}\n\nmodel {\npulled_left ~ binomial(1, inv_logit(alpha[actor] + beta[treatment]));\n\nalpha ~ normal(0, 1.5);\n\nbeta ~ normal(0, 0.5);\n\n}\n\ngenerated quantities {\n\nvector[n] log_lik;\nvector[n_pred] preds;\n\npreds = inv_logit(alpha[pred_actor] + beta[pred_treatment]);\n\nfor(i in 1:n) log_lik[i] = binomial_lpmf(pulled_left[i] | 1, inv_logit(alpha[actor[i]] + beta[treatment[i]]));\n\n\n}\n\n\"\n\nwrite_stan_file(glm_model, dir = \"logit/stan-scripts/\", basename = \"logit-mod\")\n\nlogit_mod &lt;- cmdstan_model(\"logit/stan-scripts/logit-mod.stan\")\n\n\nfitted_mod &lt;- logit_mod$sample(data = stan_data, iter_sampling = 2000)\n\nOne thing that is worth doing more in vscode is writing the stan file separately because I specified a likelihood that was technically possible to specify but stan threw a lot of warnings.\n\ndraws_logit &lt;- fitted_mod$draws(format = \"df\")\n\n\np2 &lt;- draws_logit |&gt;\n  spread_draws(preds[i]) |&gt;\n  left_join(\n    preds_data |&gt;\n      mutate(i = 1:n()),\n    by = join_by(i)\n  ) |&gt;\n  mutate(actor = str_c(\"actor \", actor), condition = factor(condition)) |&gt;\n  group_by(actor, prosoc_left, condition, treatment, labels) |&gt;\n  mean_qi(preds, .width = 0.89)\n\n\nggplot(p2, aes(x = labels, y = preds)) +\n  geom_line(aes(group = prosoc_left), linewidth = 0.25) +\n  geom_pointinterval(\n    aes(, ymin = .lower, ymax = .upper, fill = condition),\n    linewidth = 1\n  ) +\n  facet_grid(vars(\"Posterior Predicitions\"), vars(actor))\n\n\n\n\n\n\n\n\nThis model uses the inv_logit function which will just put things on the probability scale.\n\nlibrary(brms)\n\np &lt;- c(prior(normal(0, 1.5), nlpar = a), prior(normal(0, 0.5), nlpar = b))\n\n\nex &lt;- brm(\n  bf(\n    pulled_left | trials(1) ~ a + b,\n    a ~ 0 + actor,\n    b ~ 0 + treatment,\n    nl = TRUE\n  ),\n  data = clean_chimp,\n  prior = p,\n  family = binomial(),\n  iter = 2000\n)\n\nIf we look at the outputs from the model\n\ncmd_mod &lt;- fitted_mod$summary(\"beta\") |&gt;\n  as_tibble() |&gt;\n  mutate(API = \"CmdStanr\") |&gt;\n  select(estimate = mean, API, term = variable)\n\nbrms_mod &lt;- broom.mixed::tidy(ex) |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(\n    API = \"Brms\"\n  ) |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod)\n\ntinytable::tt(brms_mod)\n\nIf we rescale the parameter we get this\n\nex |&gt;\n  broom.mixed::tidy() |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(estimate = inv_logit_scaled(estimate), API = \"Brms\") |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod) |&gt;\n  tinytable::tt()\n\n\ndata(\"UCBadmit\", package = \"rethinking\")\n\nclean_admit &lt;- UCBadmit |&gt;\n  mutate(\n    gid = ifelse(applicant.gender == \"male\", 1, 2),\n    gid = as.factor(gid),\n    case = row_number(),\n    case = as.factor(case)\n  )\n\nstan_admit_data &lt;- clean_admit |&gt;\n  select(dept, gid, admit, applications) |&gt;\n  compose_data()\n\n\nadmissions_mod &lt;- \"\ndata {\nint &lt;lower = 1&gt; n;\nint &lt;lower = 1&gt; n_dept;\nint &lt;lower = 1&gt; n_gid;\narray[n] int gid;\n  array[n] int dept;\n  array[n] int applications;\n  array[n] int&lt;lower=0&gt; admit;\n\n}\n\nparameters {\nvector[n_gid] alpha;\nvector[n_dept] beta;\n\n}\nmodel {\n\nadmit ~ binomial(applications, inv_logit(alpha[gid] + beta[dept]));\n\ngid ~ normal(0, 1.5);\n\ndept ~ normal(0, 1.5);\n\n\n}\n\n\n\"\n\nwrite_stan_file(\n  admissions_mod,\n  \"logit/stan-scripts/\",\n  basename = \"admissions-mod\"\n)\n\nad_mod &lt;- cmdstan_model(\"logit/stan-scripts/admissions-mod.stan\")\n\nfitted_ad_mod &lt;- ad_mod$sample(\n  data = stan_admit_data,\n  iter_sampling = 4000\n)",
-    "crumbs": [
-      "Statistical Rethinking",
-      "Logit",
-      "Logit in CmdStanr"
-    ]
-  },
-  {
-    "objectID": "rethinking/index.html",
-    "href": "rethinking/index.html",
-    "title": "Statistical Rethinking",
-    "section": "",
-    "text": "This is me following along with Solomon Kurz’s translation of Statistical Rethinking",
-    "crumbs": [
-      "Statistical Rethinking"
-    ]
-  },
-  {
     "objectID": "rethinking/multilevel-models/multilevel-models.html",
     "href": "rethinking/multilevel-models/multilevel-models.html",
     "title": "Multilevel models in CmdStanr",
@@ -173,6 +122,35 @@
     ]
   },
   {
+    "objectID": "bayes-rules/count-models/count-models.html",
+    "href": "bayes-rules/count-models/count-models.html",
+    "title": "Count Models in Cmd Stan",
+    "section": "",
+    "text": "library(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(broom.mixed)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\nlibrary(ggtext)\n\n\ndata(equality_index, package = \"bayesrules\")\n\nequality &lt;- equality_index |&gt;\n  # Omit California because it has so many laws already\n  filter(state != \"california\")\n\nstan_dat &lt;- model.matrix(~ 1 + percent_urban + historical, data = equality)[,\n  -1\n]\n\nWell its fun that we have one example to work off of. So lets start there\n\nfirst_count &lt;- \"\ndata {\nint &lt;lower = 0&gt; n;\nint &lt;lower = 0&gt; k;\nmatrix[n,k] x;\narray[n] int laws;\n}\nparameters {\nreal alpha;\nvector[k] beta;\n\n}\nmodel {\n\nlaws ~ poisson_log_glm(x, alpha, beta);\nalpha ~ normal(2, 0.5 );\nbeta[1] ~ student_t(2, 0, 1);\nbeta[2] ~ student_t(2, -0.5, 2);\nbeta[3] ~ student_t(2, 0, 2);\n\n\n}\ngenerated quantities {\narray[n] int y_rep;\nvector[n] log_lik;\nvector[n] lambda_hat = alpha  + x * beta;\nfor(i in 1:n){\n\nlog_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);\n\ny_rep[i] = poisson_log_rng(lambda_hat[i]);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  first_count,\n  \"bayes-rules/count-models/stan-scripts/\",\n  basename = \"first-count\"\n)\n\ncount_mod1 &lt;- cmdstan_model(\n  \"bayes-rules/count-models/stan-scripts/first-count.stan\"\n)\n\nfitted_mod &lt;- count_mod1$sample(\n  data = list(\n    n = nrow(equality),\n    laws = equality$laws,\n    x = stan_dat,\n    k = ncol(stan_dat)\n  )\n)\n\n\nfitted_mod$summary()\n\nEhh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can’t do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn’t hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros.\nThe example that Andrew uses just uses the",
+    "crumbs": [
+      "Bayes Rules",
+      "Reading Note",
+      "Count Models in Cmd Stan"
+    ]
+  },
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "About",
+    "section": "",
+    "text": "About this site"
+  },
+  {
+    "objectID": "bayes-rules/index.html",
+    "href": "bayes-rules/index.html",
+    "title": "Bayes Rules",
+    "section": "",
+    "text": "This is me following along with Andrew Heiss’s Bayes Rules code and redoing as much as I can in cmdstanr",
+    "crumbs": [
+      "Bayes Rules"
+    ]
+  },
+  {
     "objectID": "bayes-rules/logit/logit.html",
     "href": "bayes-rules/logit/logit.html",
     "title": "Logits in Stan",
@@ -182,6 +160,28 @@
       "Bayes Rules",
       "Reading Note",
       "Logits in Stan"
+    ]
+  },
+  {
+    "objectID": "rethinking/index.html",
+    "href": "rethinking/index.html",
+    "title": "Statistical Rethinking",
+    "section": "",
+    "text": "This is me following along with Solomon Kurz’s translation of Statistical Rethinking",
+    "crumbs": [
+      "Statistical Rethinking"
+    ]
+  },
+  {
+    "objectID": "rethinking/logit/logit.html",
+    "href": "rethinking/logit/logit.html",
+    "title": "Logit in CmdStanr",
+    "section": "",
+    "text": "For the glms we have to lean a little more on the array syntax to get our work done.\n\nset.seed(1994)\n\nlibrary(cmdstanr)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(posterior)\nlibrary(tidyverse)\n\ndata(\"chimpanzees\", package = \"rethinking\")\n\nclean_chimp &lt;- chimpanzees |&gt;\n  mutate(\n    treatment = factor(1 + prosoc_left + 2 * condition),\n    labels = factor(\n      treatment,\n      levels = 1:4,\n      labels = c(\"r/n\", \"l/n\", \"r/p\", \"l/p\")\n    )\n  )\n\nCool lets prep the model. Really anytime we use something that is not a number we can use the array syntax. The n_variable pops up in the parameters argument. So you have to marry the n_variable with the parameter.\n\npreds_data &lt;- clean_chimp |&gt;\n  distinct(actor, prosoc_left, condition, treatment, labels)\n\nstan_data &lt;- clean_chimp |&gt;\n  select(actor, treatment, pulled_left) |&gt;\n  compose_data(\n    n_actor = n_distinct(actor),\n    n_treatment = n_distinct(treatment),\n    n_pred = nrow(preds_data),\n    pred_actor = preds_data$treatment,\n    pred_treatment = preds_data$treatment\n  )\n\nglm_model &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nint &lt;lower=1&gt; n_pred;\nint &lt;lower=1&gt; n_treatment;\nint &lt;lower=1&gt; n_actor;\narray[n] int actor;\narray[n] int treatment;\narray[n_pred] int pred_treatment;\narray[n_pred] int pred_actor;\narray[n] int&lt;lower =0, upper=1&gt; pulled_left;\n\n}\n\nparameters {\nvector[n_actor] alpha;\nvector[n_treatment] beta;\n\n}\n\nmodel {\npulled_left ~ binomial(1, inv_logit(alpha[actor] + beta[treatment]));\n\nalpha ~ normal(0, 1.5);\n\nbeta ~ normal(0, 0.5);\n\n}\n\ngenerated quantities {\n\nvector[n] log_lik;\nvector[n_pred] preds;\n\npreds = inv_logit(alpha[pred_actor] + beta[pred_treatment]);\n\nfor(i in 1:n) log_lik[i] = binomial_lpmf(pulled_left[i] | 1, inv_logit(alpha[actor[i]] + beta[treatment[i]]));\n\n\n}\n\n\"\n\nwrite_stan_file(glm_model, dir = \"logit/stan-scripts/\", basename = \"logit-mod\")\n\nlogit_mod &lt;- cmdstan_model(\"logit/stan-scripts/logit-mod.stan\")\n\n\nfitted_mod &lt;- logit_mod$sample(data = stan_data, iter_sampling = 2000)\n\nOne thing that is worth doing more in vscode is writing the stan file separately because I specified a likelihood that was technically possible to specify but stan threw a lot of warnings.\n\ndraws_logit &lt;- fitted_mod$draws(format = \"df\")\n\n\np2 &lt;- draws_logit |&gt;\n  spread_draws(preds[i]) |&gt;\n  left_join(\n    preds_data |&gt;\n      mutate(i = 1:n()),\n    by = join_by(i)\n  ) |&gt;\n  mutate(actor = str_c(\"actor \", actor), condition = factor(condition)) |&gt;\n  group_by(actor, prosoc_left, condition, treatment, labels) |&gt;\n  mean_qi(preds, .width = 0.89)\n\n\nggplot(p2, aes(x = labels, y = preds)) +\n  geom_line(aes(group = prosoc_left), linewidth = 0.25) +\n  geom_pointinterval(\n    aes(, ymin = .lower, ymax = .upper, fill = condition),\n    linewidth = 1\n  ) +\n  facet_grid(vars(\"Posterior Predicitions\"), vars(actor))\n\n\n\n\n\n\n\n\nThis model uses the inv_logit function which will just put things on the probability scale.\n\nlibrary(brms)\n\np &lt;- c(prior(normal(0, 1.5), nlpar = a), prior(normal(0, 0.5), nlpar = b))\n\n\nex &lt;- brm(\n  bf(\n    pulled_left | trials(1) ~ a + b,\n    a ~ 0 + actor,\n    b ~ 0 + treatment,\n    nl = TRUE\n  ),\n  data = clean_chimp,\n  prior = p,\n  family = binomial(),\n  iter = 2000\n)\n\nIf we look at the outputs from the model\n\ncmd_mod &lt;- fitted_mod$summary(\"beta\") |&gt;\n  as_tibble() |&gt;\n  mutate(API = \"CmdStanr\") |&gt;\n  select(estimate = mean, API, term = variable)\n\nbrms_mod &lt;- broom.mixed::tidy(ex) |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(\n    API = \"Brms\"\n  ) |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod)\n\ntinytable::tt(brms_mod)\n\nIf we rescale the parameter we get this\n\nex |&gt;\n  broom.mixed::tidy() |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(estimate = inv_logit_scaled(estimate), API = \"Brms\") |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod) |&gt;\n  tinytable::tt()\n\n\ndata(\"UCBadmit\", package = \"rethinking\")\n\nclean_admit &lt;- UCBadmit |&gt;\n  mutate(\n    gid = ifelse(applicant.gender == \"male\", 1, 2),\n    gid = as.factor(gid),\n    case = row_number(),\n    case = as.factor(case)\n  )\n\nstan_admit_data &lt;- clean_admit |&gt;\n  select(dept, gid, admit, applications) |&gt;\n  compose_data()\n\n\nadmissions_mod &lt;- \"\ndata {\nint &lt;lower = 1&gt; n;\nint &lt;lower = 1&gt; n_dept;\nint &lt;lower = 1&gt; n_gid;\narray[n] int gid;\n  array[n] int dept;\n  array[n] int applications;\n  array[n] int&lt;lower=0&gt; admit;\n\n}\n\nparameters {\nvector[n_gid] alpha;\nvector[n_dept] beta;\n\n}\nmodel {\n\nadmit ~ binomial(applications, inv_logit(alpha[gid] + beta[dept]));\n\ngid ~ normal(0, 1.5);\n\ndept ~ normal(0, 1.5);\n\n\n}\n\n\n\"\n\nwrite_stan_file(\n  admissions_mod,\n  \"logit/stan-scripts/\",\n  basename = \"admissions-mod\"\n)\n\nad_mod &lt;- cmdstan_model(\"logit/stan-scripts/admissions-mod.stan\")\n\nfitted_ad_mod &lt;- ad_mod$sample(\n  data = stan_admit_data,\n  iter_sampling = 4000\n)",
+    "crumbs": [
+      "Statistical Rethinking",
+      "Logit",
+      "Logit in CmdStanr"
     ]
   }
 ]

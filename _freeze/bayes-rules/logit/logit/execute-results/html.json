@@ -1,0 +1,15 @@
+{
+  "hash": "4ac33d790afc1f7928565f62bc39e7b6",
+  "result": {
+    "engine": "knitr",
+    "markdown": "---\ntitle: \"Logits in Stan\"\nformat: html\n---\n\n\n\n\n::: {.cell}\n\n```{.r .cell-code}\nlibrary(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(rstanarm)\nlibrary(marginaleffects)\nlibrary(broom)\nlibrary(broom.mixed)\nlibrary(parameters)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\n\ndata(weather_perth, package = \"bayesrules\")\n\nweather <- weather_perth %>%\n  select(day_of_year, raintomorrow, humidity9am, humidity3pm, raintoday) |>\n  mutate(across(\n    c(humidity9am, humidity3pm),\n    ~ scale(., scale = FALSE),\n    .names = \"{col}_centered\"\n  )) |>\n  mutate(across(\n    c(humidity9am, humidity3pm),\n    ~ as.numeric(scale(., scale = FALSE)),\n    .names = \"{col}_c\"\n  )) |>\n  mutate(raintomorrow_num = as.numeric(raintomorrow) - 1)\n\nextract_attributes <- function(x) {\n  attributes(x) %>%\n    set_names(janitor::make_clean_names(names(.))) %>%\n    as_tibble() %>%\n    slice(1)\n}\n\nunscaled <- weather %>%\n  select(ends_with(\"_centered\")) |>\n  summarize(across(everything(), ~ extract_attributes(.))) |>\n  pivot_longer(everything()) |>\n  unnest(value) |>\n  split(~name)\n```\n:::\n\n\n\n\nOkay \n",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

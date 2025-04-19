@@ -30,7 +30,8 @@ website:
           contents: 
           - rethinking/logit/logit.qmd
         - section: 'Multilevel Models'
-          contents: rethinking/multilevel-models/multilevel-models.qmd
+          contents: 
+          - rethinking/multilevel-models/multilevel-models.qmd
 
    - title: 'Bayes Rules'
      contents: 
