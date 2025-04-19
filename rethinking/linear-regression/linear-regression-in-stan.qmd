@@ -12,6 +12,9 @@ library(tidybayes)
 library(broom.mixed)
 library(MetBrewer)
 library(tidyverse)
+
+theme_set(theme_minimal())
+
 ```
 
 You goofed around and now have to learn how to use Stan and be able to do posterior stuff in Stan. They reccomend using `cmdstan` which is really just an interface to the command line tool. What is really great about cmdstan is that it is extremely fast and really flexible. I think you could say that one of the con is that you do have to program some of the posterior quantities of interest yourself. The good news is that for the most part you aren't pushing the frontiers of estimates. Stan is really just a lower level wrapper around some C++. To get the wrapper to work you have to follow a somewhat strict order 
@@ -587,7 +590,7 @@ Coolio we have the fitted model now its time to extract some things for plots.
 
 
 ```{r}
-
+#
 draws_from_int_model <- fitted_int_model$draws(format = "df")
 
 plotting_draws <-
@@ -599,7 +602,7 @@ plotting_draws <-
 ggplot(plotting_draws, aes(x = water_cent, y = mu, group = .draw)) +
   geom_point() +
   geom_line(alpha = 0.5) +
-  facet_wrap(vars(nice_labs))
+  facet_wrap(vars(nice_labs), labeller = label_parsed)
 
 
 ```

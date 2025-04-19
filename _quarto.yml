@@ -53,7 +53,6 @@ format:
     toc: true
 
 execute: 
-  cache: true
   warning: false
   message: false 
   freeze: auto

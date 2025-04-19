@@ -1,12 +1,12 @@
 
-data { 
+data {
 int <lower=0> n;
 array[n] int tank;
 array[n] int density;
 array[n] int surv;
 
 }
-parameters { 
+parameters {
 
 ///global tank variation
 real abar;
@@ -15,7 +15,7 @@ vector[n] alpha;
 
 }
 
-model { 
+model {
 
 surv ~ binomial(density, inv_logit(alpha[tank]));
 

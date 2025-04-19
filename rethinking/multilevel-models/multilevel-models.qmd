@@ -11,12 +11,12 @@ library(cmdstanr)
 library(tidyverse)
 
 
-data('reedfrogs', package = 'rethinking')
+data("reedfrogs", package = "rethinking")
 
-clean_frog = reedfrogs |>
+clean_frog <- reedfrogs |>
   mutate(tank = row_number())
 
-stan_dat = clean_frog |>
+stan_dat <- clean_frog |>
   select(surv, density, tank) |>
   compose_data()
 
@@ -31,15 +31,15 @@ Now it is time to face what feels close to the final boss in stan. MLM's.
 
 ```{r}
 
-mlm_basic = '
-data { 
+mlm_basic <- "
+data {
 int <lower=0> n;
 array[n] int tank;
 array[n] int density;
 array[n] int surv;
 
 }
-parameters { 
+parameters {
 
 ///global tank variation
 real abar;
@@ -48,7 +48,7 @@ vector[n] alpha;
 
 }
 
-model { 
+model {
 
 surv ~ binomial(density, inv_logit(alpha[tank]));
 
@@ -59,14 +59,14 @@ sigma ~ exponential(1);
 }
 
 
-'
+"
 
 
-write_stan_file(mlm_basic, 'multilevel-models/stan-scripts', 'mlm-basic')
+write_stan_file(mlm_basic, "multilevel-models/stan-scripts", "mlm-basic")
 
-mod = cmdstan_model('multilevel-models/stan-scripts/mlm-basic.stan')
+mod <- cmdstan_model("multilevel-models/stan-scripts/mlm-basic.stan")
 
-fitted_mlm = mod$sample(
+fitted_mlm <- mod$sample(
   data = stan_dat
 )
 
@@ -77,11 +77,11 @@ Cool lets pull out the draws
 
 
 ```{r}
-first_draws = fitted_mlm$draws(format = 'df')
+first_draws <- fitted_mlm$draws(format = "df")
 
-fitted_mlm$summary(c('abar', 'sigma', 'alpha[1]', 'alpha[48]'))
+fitted_mlm$summary(c("abar", "sigma", "alpha[1]", "alpha[48]"))
 
-plot_dat = first_draws |>
+plot_dat <- first_draws |>
   spread_draws(alpha[tank]) |>
   mutate(propsurv = plogis(alpha)) |>
   group_by(tank) |>
@@ -99,7 +99,7 @@ ggplot(plot_dat, aes(x = tank, y = propsurv)) +
     shape = 1,
     linewidth = 0.25
   ) +
-  geom_point(data = clean_frog, clolor = 'blue') +
-  facet_wrap(vars(density), scales = 'free_x')
+  geom_point(data = clean_frog, clolor = "blue") +
+  facet_wrap(vars(density), scales = "free_x")
 
 ```
