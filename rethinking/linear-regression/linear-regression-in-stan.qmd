@@ -1,5 +1,5 @@
 ---
-title: "Linear Models in CmdStan and "
+title: "Linear Models in CmdStan"
 format: html
 
 ---

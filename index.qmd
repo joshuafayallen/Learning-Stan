@@ -1,5 +1,5 @@
 ---
-title: "Learning-Stan"
+title: "Home"
 ---
 
-The title of the Website is a little self explanatory
+This is me just figuring out how to use Stan by using some worked examples. Hopefully one day this will be a little more worked out at some point. If you see some areas for improvement or typos just submit an issue.

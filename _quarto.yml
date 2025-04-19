@@ -1,14 +1,18 @@
 project:
   type: website
   output-dir: docs
+  render: 
+   - "*.qmd"
 
 website:
   title: "Learning-Stan"
+  repo-url: "https://github.com/joshuafayallen/Learning-Stan"
+  repo-actions: [edit, issue]
+  page-navigation: true 
   navbar:
     left:
       - href: index.qmd
         text: Home
-      - about.qmd
       - text: Statistical Rethinking
         file: rethinking/index.qmd
       - text: Bayes Rules
@@ -51,6 +55,7 @@ execute:
   cache: true
   warning: false
   message: false 
+  freeze: auto
 
 knitr: 
    opts_chunk: 

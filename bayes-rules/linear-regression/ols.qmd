@@ -864,7 +864,7 @@ weather_full_brms <- brm(
   prior = priors,
   chains = 4,
   iter = 5000 * 2,
-  seed = BAYES_SEED,
+  seed = 2,
   backend = "cmdstanr",
   refresh = 0
 )
@@ -899,7 +899,7 @@ tidy_full_mod <- broom.mixed::tidy(
   arrange(term) |>
   select(brms = estimate)
 
-cmdstan <- fitted_full_mod$draws(format = "df") |>
+cmd <- fitted_full_mod$draws(format = "df") |>
   rename(Uluru = `beta_location[1]`, Wollongong = `beta_location[2]`) |>
   select(Uluru:beta_wind) |>
   summarise_draws() |>
@@ -911,8 +911,10 @@ cmdstan <- fitted_full_mod$draws(format = "df") |>
 
 library(tinytable)
 
-tt(cmdstan)
+t <- tt(cmd)
 
+
+t
 ```
 
 
