@@ -1,56 +1,5 @@
 [
   {
-    "objectID": "about.html",
-    "href": "about.html",
-    "title": "About",
-    "section": "",
-    "text": "About this site"
-  },
-  {
-    "objectID": "bayes-rules/count-models/count-models.html",
-    "href": "bayes-rules/count-models/count-models.html",
-    "title": "Count Models in Cmd Stan",
-    "section": "",
-    "text": "library(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(broom.mixed)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\nlibrary(ggtext)\n\n\ndata(equality_index, package = \"bayesrules\")\n\nequality &lt;- equality_index |&gt;\n  # Omit California because it has so many laws already\n  filter(state != \"california\")\n\nstan_dat &lt;- model.matrix(~ 1 + percent_urban + historical, data = equality)[,\n  -1\n]\n\nWell its fun that we have one example to work off of. So lets start there\n\nfirst_count &lt;- \"\ndata {\nint &lt;lower = 0&gt; n;\nint &lt;lower = 0&gt; k;\nmatrix[n,k] x;\narray[n] int laws;\n}\nparameters {\nreal alpha;\nvector[k] beta;\n\n}\nmodel {\n\nlaws ~ poisson_log_glm(x, alpha, beta);\nalpha ~ normal(2, 0.5 );\nbeta[1] ~ student_t(2, 0, 1);\nbeta[2] ~ student_t(2, -0.5, 2);\nbeta[3] ~ student_t(2, 0, 2);\n\n\n}\ngenerated quantities {\narray[n] int y_rep;\nvector[n] log_lik;\nvector[n] lambda_hat = alpha  + x * beta;\nfor(i in 1:n){\n\nlog_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);\n\ny_rep[i] = poisson_log_rng(lambda_hat[i]);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  first_count,\n  \"bayes-rules/count-models/stan-scripts/\",\n  basename = \"first-count\"\n)\n\ncount_mod1 &lt;- cmdstan_model(\n  \"bayes-rules/count-models/stan-scripts/first-count.stan\"\n)\n\nfitted_mod &lt;- count_mod1$sample(\n  data = list(\n    n = nrow(equality),\n    laws = equality$laws,\n    x = stan_dat,\n    k = ncol(stan_dat)\n  )\n)\n\n\nfitted_mod$summary()\n\nEhh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can’t do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn’t hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros.\nThe example that Andrew uses just uses the",
-    "crumbs": [
-      "Bayes Rules",
-      "Reading Note",
-      "Count Models in Cmd Stan"
-    ]
-  },
-  {
-    "objectID": "bayes-rules/index.html",
-    "href": "bayes-rules/index.html",
-    "title": "Bayes Rules",
-    "section": "",
-    "text": "This is me following along with Andrew Heiss’s Bayes Rules code and redoing as much as I can in cmdstanr",
-    "crumbs": [
-      "Bayes Rules"
-    ]
-  },
-  {
-    "objectID": "rethinking/logit/logit.html",
-    "href": "rethinking/logit/logit.html",
-    "title": "Logit in CmdStanr",
-    "section": "",
-    "text": "For the glms we have to lean a little more on the array syntax to get our work done.\n\nset.seed(1994)\n\nlibrary(cmdstanr)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(posterior)\nlibrary(tidyverse)\n\ndata(\"chimpanzees\", package = \"rethinking\")\n\nclean_chimp &lt;- chimpanzees |&gt;\n  mutate(\n    treatment = factor(1 + prosoc_left + 2 * condition),\n    labels = factor(\n      treatment,\n      levels = 1:4,\n      labels = c(\"r/n\", \"l/n\", \"r/p\", \"l/p\")\n    )\n  )\n\nCool lets prep the model. Really anytime we use something that is not a number we can use the array syntax. The n_variable pops up in the parameters argument. So you have to marry the n_variable with the parameter.\n\npreds_data &lt;- clean_chimp |&gt;\n  distinct(actor, prosoc_left, condition, treatment, labels)\n\nstan_data &lt;- clean_chimp |&gt;\n  select(actor, treatment, pulled_left) |&gt;\n  compose_data(\n    n_actor = n_distinct(actor),\n    n_treatment = n_distinct(treatment),\n    n_pred = nrow(preds_data),\n    pred_actor = preds_data$treatment,\n    pred_treatment = preds_data$treatment\n  )\n\nglm_model &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nint &lt;lower=1&gt; n_pred;\nint &lt;lower=1&gt; n_treatment;\nint &lt;lower=1&gt; n_actor;\narray[n] int actor;\narray[n] int treatment;\narray[n_pred] int pred_treatment;\narray[n_pred] int pred_actor;\narray[n] int&lt;lower =0, upper=1&gt; pulled_left;\n\n}\n\nparameters {\nvector[n_actor] alpha;\nvector[n_treatment] beta;\n\n}\n\nmodel {\npulled_left ~ binomial(1, inv_logit(alpha[actor] + beta[treatment]));\n\nalpha ~ normal(0, 1.5);\n\nbeta ~ normal(0, 0.5);\n\n}\n\ngenerated quantities {\n\nvector[n] log_lik;\nvector[n_pred] preds;\n\npreds = inv_logit(alpha[pred_actor] + beta[pred_treatment]);\n\nfor(i in 1:n) log_lik[i] = binomial_lpmf(pulled_left[i] | 1, inv_logit(alpha[actor[i]] + beta[treatment[i]]));\n\n\n}\n\n\"\n\nwrite_stan_file(glm_model, dir = \"logit/stan-scripts/\", basename = \"logit-mod\")\n\nlogit_mod &lt;- cmdstan_model(\"logit/stan-scripts/logit-mod.stan\")\n\n\nfitted_mod &lt;- logit_mod$sample(data = stan_data, iter_sampling = 2000)\n\nOne thing that is worth doing more in vscode is writing the stan file separately because I specified a likelihood that was technically possible to specify but stan threw a lot of warnings.\n\ndraws_logit &lt;- fitted_mod$draws(format = \"df\")\n\n\np2 &lt;- draws_logit |&gt;\n  spread_draws(preds[i]) |&gt;\n  left_join(\n    preds_data |&gt;\n      mutate(i = 1:n()),\n    by = join_by(i)\n  ) |&gt;\n  mutate(actor = str_c(\"actor \", actor), condition = factor(condition)) |&gt;\n  group_by(actor, prosoc_left, condition, treatment, labels) |&gt;\n  mean_qi(preds, .width = 0.89)\n\n\nggplot(p2, aes(x = labels, y = preds)) +\n  geom_line(aes(group = prosoc_left), linewidth = 0.25) +\n  geom_pointinterval(\n    aes(, ymin = .lower, ymax = .upper, fill = condition),\n    linewidth = 1\n  ) +\n  facet_grid(vars(\"Posterior Predicitions\"), vars(actor))\n\n\n\n\n\n\n\n\nThis model uses the inv_logit function which will just put things on the probability scale.\n\nlibrary(brms)\n\np &lt;- c(prior(normal(0, 1.5), nlpar = a), prior(normal(0, 0.5), nlpar = b))\n\n\nex &lt;- brm(\n  bf(\n    pulled_left | trials(1) ~ a + b,\n    a ~ 0 + actor,\n    b ~ 0 + treatment,\n    nl = TRUE\n  ),\n  data = clean_chimp,\n  prior = p,\n  family = binomial(),\n  iter = 2000\n)\n\nIf we look at the outputs from the model\n\ncmd_mod &lt;- fitted_mod$summary(\"beta\") |&gt;\n  as_tibble() |&gt;\n  mutate(API = \"CmdStanr\") |&gt;\n  select(estimate = mean, API, term = variable)\n\nbrms_mod &lt;- broom.mixed::tidy(ex) |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(\n    API = \"Brms\"\n  ) |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod)\n\ntinytable::tt(brms_mod)\n\nIf we rescale the parameter we get this\n\nex |&gt;\n  broom.mixed::tidy() |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(estimate = inv_logit_scaled(estimate), API = \"Brms\") |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod) |&gt;\n  tinytable::tt()\n\n\ndata(\"UCBadmit\", package = \"rethinking\")\n\nclean_admit &lt;- UCBadmit |&gt;\n  mutate(\n    gid = ifelse(applicant.gender == \"male\", 1, 2),\n    gid = as.factor(gid),\n    case = row_number(),\n    case = as.factor(case)\n  )\n\nstan_admit_data &lt;- clean_admit |&gt;\n  select(dept, gid, admit, applications) |&gt;\n  compose_data()\n\n\nadmissions_mod &lt;- \"\ndata {\nint &lt;lower = 1&gt; n;\nint &lt;lower = 1&gt; n_dept;\nint &lt;lower = 1&gt; n_gid;\narray[n] int gid;\n  array[n] int dept;\n  array[n] int applications;\n  array[n] int&lt;lower=0&gt; admit;\n\n}\n\nparameters {\nvector[n_gid] alpha;\nvector[n_dept] beta;\n\n}\nmodel {\n\nadmit ~ binomial(applications, inv_logit(alpha[gid] + beta[dept]));\n\ngid ~ normal(0, 1.5);\n\ndept ~ normal(0, 1.5);\n\n\n}\n\n\n\"\n\nwrite_stan_file(\n  admissions_mod,\n  \"logit/stan-scripts/\",\n  basename = \"admissions-mod\"\n)\n\nad_mod &lt;- cmdstan_model(\"logit/stan-scripts/admissions-mod.stan\")\n\nfitted_ad_mod &lt;- ad_mod$sample(\n  data = stan_admit_data,\n  iter_sampling = 4000\n)",
-    "crumbs": [
-      "Statistical Rethinking",
-      "Logit",
-      "Logit in CmdStanr"
-    ]
-  },
-  {
-    "objectID": "rethinking/index.html",
-    "href": "rethinking/index.html",
-    "title": "Statistical Rethinking",
-    "section": "",
-    "text": "This is me following along with Solomon Kurz’s translation of Statistical Rethinking",
-    "crumbs": [
-      "Statistical Rethinking"
-    ]
-  },
-  {
     "objectID": "rethinking/multilevel-models/multilevel-models.html",
     "href": "rethinking/multilevel-models/multilevel-models.html",
     "title": "Multilevel models in CmdStanr",
@@ -60,57 +9,57 @@
   {
     "objectID": "rethinking/linear-regression/linear-regression-in-stan.html",
     "href": "rethinking/linear-regression/linear-regression-in-stan.html",
-    "title": "Linear Models in CmdStan and",
+    "title": "Linear Models in CmdStan",
     "section": "",
     "text": "library(cmdstanr)\nlibrary(ggdist)\nlibrary(posterior)\nlibrary(tidybayes)\nlibrary(broom.mixed)\nlibrary(MetBrewer)\nlibrary(tidyverse)\nYou goofed around and now have to learn how to use Stan and be able to do posterior stuff in Stan. They reccomend using cmdstan which is really just an interface to the command line tool. What is really great about cmdstan is that it is extremely fast and really flexible. I think you could say that one of the con is that you do have to program some of the posterior quantities of interest yourself. The good news is that for the most part you aren’t pushing the frontiers of estimates. Stan is really just a lower level wrapper around some C++. To get the wrapper to work you have to follow a somewhat strict order\nSome of these are optional it will just depend on the uses.",
     "crumbs": [
       "Statistical Rethinking",
       "OLS",
-      "Linear Models in CmdStan and"
+      "Linear Models in CmdStan"
     ]
   },
   {
     "objectID": "rethinking/linear-regression/linear-regression-in-stan.html#a-simple-model",
     "href": "rethinking/linear-regression/linear-regression-in-stan.html#a-simple-model",
-    "title": "Linear Models in CmdStan and",
+    "title": "Linear Models in CmdStan",
     "section": "A simple model",
     "text": "A simple model\nLets walk through the Howell example\n\ndata(\"Howell1\", package = \"rethinking\")\n\njust_adults &lt;- Howell1 |&gt;\n  filter(age &gt; 18)\n\nmodel_code &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nvector[n] height;\n}\nparameters {\nreal alpha;\nreal &lt;lower = 0, upper = 50&gt; sigma;\n}\nmodel {\nheight ~ normal(alpha, sigma); // likelihood\nalpha ~ normal(178, 20); // height prior\nsigma ~ uniform(0, 50);\n\n}\n\n\"\ncmdstanr::write_stan_file(\n  model_code,\n  \"linear-regression/stan-scripts\",\n  basename = \"simple_mod\"\n)\n\nmod1_dat &lt;- just_adults |&gt;\n  select(height, weight) |&gt;\n  compose_data()\n\n\nmodels &lt;- cmdstan_model(\n  stan_file = \"linear-regression/stan-scripts/simple_mod.stan\"\n)\n\nfitted_mod &lt;- models$sample(\n  data = mod1_dat,\n  chains = 6\n)\n\nThis will fit the model then lets extract the posterior draws\n\nfitted_mod$draws(format = \"df\") |&gt;\n  summarise_draws()\n\nThis roughly lets us get the output of the precis output. Lets see how well this replicates what I think should happen.\n\ndraws_df &lt;- fitted_mod$draws(format = \"df\")\n\nggplot(draws_df, aes(x = alpha)) +\n  stat_halfeye()\n\n\n\n\n\n\n\n\nshe looks like swe are generally in the area of our prior. Now lets add height as a variable\n\nstan_mod2 &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nvector[n] height;\nreal avg_weight;\nvector[n] weight;\n}\nparameters {\nreal alpha;\nreal &lt;lower=0, upper = 50&gt; sigma;\nreal &lt;lower = 0&gt; beta;\n}\nmodel {\nvector[n] mu;\nmu = alpha + beta * (weight - avg_weight);\nheight ~ normal(mu, sigma);\nbeta ~ lognormal(0, 1);\nalpha ~ normal(178, 20);\nsigma ~ uniform(0,50);\n}\n\n\n\"\n\nwrite_stan_file(\n  stan_mod2,\n  dir = \"linear-regression/stan-scripts/\",\n  basename = \"lognormal-mod.stan\"\n)\n\nlog_norm_mod &lt;- cmdstan_model(\n  \"linear-regression/stan-scripts/lognormal-mod.stan\"\n)\n\n\nmodel_data2 &lt;- just_adults |&gt;\n  select(height, weight) |&gt;\n  compose_data()\n\nmodel_data2$avg_weight &lt;- mean(model_data2$weight)\n\n\nfitted_log_normal &lt;- log_norm_mod$sample(data = model_data2)\n\nCoool now we have the model. Generally we want some uncertainty around the parmeter so we can go ahead and fit some new data in the sampling code.\n\nsampling_data &lt;- tibble(n = c(10, 50, 150, 352))\n\nsampling_data &lt;- sampling_data |&gt;\n  mutate(\n    data = map(\n      .x = n,\n      ~ just_adults |&gt;\n        slice(1:.x)\n    )\n  )\n\nprep_data &lt;- sampling_data |&gt;\n  mutate(\n    stan_data = map(\n      .x = data,\n      .f = ~ .x |&gt; compose_data(avg_weight = mean(.x$weight))\n    )\n  )\n\n\ndraws_df &lt;- prep_data |&gt;\n  mutate(\n    samps = map(\n      .x = stan_data,\n      .f = ~ log_norm_mod$sample(\n        data = .x\n      )\n    )\n  )\n\nadd_draws &lt;- draws_df |&gt;\n  mutate(\n    draws = map(.x = samps, .f = ~ as_draws_df(.x) |&gt; slice_sample(n = 20)),\n    xbar = map_dbl(.x = stan_data, .f = ~ .x[[\"avg_weight\"]]),\n    n = str_c(\"italic(n)==\", n) |&gt;\n      factor(levels = str_c(\"italic(n)==\", c(10, 50, 150, 352)))\n  )\n\n\ndraws_plot &lt;- add_draws |&gt;\n  select(n, data, xbar) |&gt;\n  unnest(data)\n\nlines_plot &lt;- add_draws |&gt;\n  select(n, xbar, draws) |&gt;\n  unnest(draws)\n\n\nggplot() +\n  geom_point(data = draws_plot, aes(x = weight - xbar, y = height)) +\n  geom_abline(\n    data = lines_plot,\n    aes(slope = beta, intercept = alpha, group = .draw),\n    color = \"pink\"\n  ) +\n  facet_wrap(vars(n), labeller = label_parsed) +\n  scale_x_continuous(\n    \"weight\",\n    breaks = 3:6 * 10 - mean(just_adults$weight),\n    labels = 3:6 * 10\n  )\n\n\n\n\n\n\n\n\nCool now we have a bunch of regression lines. What if we wanted to use some of the fun things in ggdist? Well lets get our draws data and then play around with it. If we wanted to plot the data at a variety of weights we could simply do height = alpha + beta * (weight - avg_weight)",
     "crumbs": [
       "Statistical Rethinking",
       "OLS",
-      "Linear Models in CmdStan and"
+      "Linear Models in CmdStan"
     ]
   },
   {
     "objectID": "rethinking/linear-regression/linear-regression-in-stan.html#contrast-coding",
     "href": "rethinking/linear-regression/linear-regression-in-stan.html#contrast-coding",
-    "title": "Linear Models in CmdStan and",
+    "title": "Linear Models in CmdStan",
     "section": "Contrast coding",
     "text": "Contrast coding\n\nadd_levels &lt;- just_adults |&gt;\n  mutate(sex = ifelse(male == 1, \"Male\", \"Female\"), sex = as.factor(sex))\n\nlevels_data &lt;- compose_data(add_levels)\n\nlevels_data$avg_weight_female &lt;- mean(add_levels$weight[\n  add_levels$sex == \"Female\"\n])\nlevels_data$avg_weight_male &lt;- mean(add_levels$weight[add_levels$sex == \"Male\"])\nlevels_data$avg_weight &lt;- mean(add_levels$weight)\n\nWhat is interesting is that no matter what you do the compose data block will output a number for sex. This gives a lot of flexibility in how we specify priors. This will also change our approach to defining the model in stana\n\ncat_model &lt;- \"\n\ndata {\nint &lt;lower = 1&gt; n;\nint&lt;lower = 1&gt; n_sex;\narray[n] int sex;\nvector[n] height;\nreal avg_weight;\nvector[n] weight;\n}\nparameters {\nreal &lt;lower=0&gt; beta_weight;\nvector[n_sex] alpha;\nreal &lt;lower = 0, upper = 50&gt; sigma;\n\n}\nmodel {\nvector[n] mu;\n\nmu = alpha[sex] + beta_weight * (weight-avg_weight);\n\nheight ~ normal(mu, sigma);\n\nalpha[1] ~ normal(178,20);\n\nalpha[2] ~ normal(178, 20); // just assuming women are 5 cm shorter than men\n\nbeta_weight ~ lognormal(0, 1);\n\nsigma ~ uniform(0, 50);\n\n}\n\"\n\nwrite_stan_file(\n  cat_model,\n  dir = \"linear-regression/stan-scripts/\",\n  basename = \"categorical_model\"\n)\n\ncat_model &lt;- cmdstan_model(\n  \"linear-regression/stan-scripts/categorical_model.stan\"\n)\n\nfitted_categorical_mod &lt;- cat_model$sample(data = levels_data)\n\nCool now lets get the draws and plot them\n\ncontrast_draws &lt;- fitted_categorical_mod$draws(format = \"df\") |&gt;\n  mutate(diff = `alpha[1]` - `alpha[2]`) |&gt;\n  pivot_longer(\n    c(starts_with(\"alpha\"), diff),\n    names_to = \"sex\",\n    values_to = \"heights_by_sex\"\n  ) |&gt;\n  mutate(\n    sex = case_when(\n      sex == \"alpha[1]\" ~ \"Male\",\n      sex == \"alpha[2]\" ~ \"Female\",\n      sex == \"diff\" ~ \"Posterior Contrast between Male and Female\"\n    )\n  )\n\n\nggplot(contrast_draws, aes(x = heights_by_sex)) +\n  stat_slab(normalize = \"panels\") +\n  stat_pointinterval() +\n  facet_wrap(vars(sex), scales = \"free_x\")\n\n\n\n\n\n\n\n\nCool.",
     "crumbs": [
       "Statistical Rethinking",
       "OLS",
-      "Linear Models in CmdStan and"
+      "Linear Models in CmdStan"
     ]
   },
   {
     "objectID": "rethinking/linear-regression/linear-regression-in-stan.html#interaction-terms-in-stan",
     "href": "rethinking/linear-regression/linear-regression-in-stan.html#interaction-terms-in-stan",
-    "title": "Linear Models in CmdStan and",
+    "title": "Linear Models in CmdStan",
     "section": "Interaction Terms in Stan",
     "text": "Interaction Terms in Stan\nWe love an interaction in political science. My guess is it is actually really simple. He is using this rugged data package s\n\ndata(\"rugged\", package = \"rethinking\")\n\n\nclean_data &lt;- rugged |&gt;\n  filter(complete.cases(rgdppc_2000)) |&gt;\n  mutate(\n    log_gdp = log(rgdppc_2000),\n    log_gdp_z = log_gdp / mean(log_gdp),\n    rugged_std = rugged / max(rugged),\n    nice_levels = ifelse(\n      cont_africa == 0,\n      \"Non-African Nation\",\n      \"African Nation\"\n    ),\n    cid = as.factor(cont_africa)\n  )\n\n\nstan_data &lt;- clean_data |&gt;\n  select(log_gdp, log_gdp_z, rugged_std, cid) |&gt;\n  compose_data(\n    avg_rugged = mean(clean_data$rugged_std)\n  )\n\nCool now that we have our data lets specify the model. The .* specifies an interaction for each level of\n\nint_categorical_model &lt;- \"\ndata {\n\nint &lt;lower=1&gt; n;\n\nint &lt;lower=1&gt; n_cid;\n\nreal avg_rugged;\n\narray[n] int cid;\n\nvector[n]  log_gdp_z;\n\nvector[n]  rugged_std;\n}\nparameters {\n\nvector[n_cid] alpha;\n\nvector[n_cid] beta_rugged;\n\nreal &lt;lower=0&gt; sigma;\n\n}\ntransformed parameters {\n\nvector[n] mu;\n\nmu = alpha[cid] + beta_rugged[cid] .* (rugged_std - avg_rugged);\n\n}\n\nmodel {\n\nlog_gdp_z ~ normal(mu, sigma);\n\nalpha ~ normal(1, 0.1);\n\nbeta_rugged ~ normal(0, 0.3);\n\nsigma ~ exponential(1);\n\n}\ngenerated quantities {\nvector[n] log_lik; // so we can calculate fit statistics\nfor(i in 1:n) log_lik[i] = normal_lpdf(log_gdp_z[i] | mu[i], sigma);\n\n}\n\n\"\n\nwrite_stan_file(\n  int_categorical_model,\n  dir = \"linear-regression/stan-scripts/\",\n  basename = \"categorical_int\"\n)\n\ncat_int_mod &lt;- cmdstan_model(\n  \"linear-regression/stan-scripts/categorical_int.stan\"\n)\n\nfitted_int_mod &lt;- cat_int_mod$sample(\n  data = stan_data\n)\n\nplot_levels &lt;- fitted_int_mod$draws(format = \"df\") |&gt;\n  as_draws_df() |&gt;\n  select(.draw, `alpha[1]`:sigma) |&gt;\n  expand_grid(\n    cid = 1:2,\n    rugged_std = seq(-0.1, to = 1.1, length.out = 25),\n    avg_rugged = mean(clean_data$rugged_std)\n  ) |&gt;\n  mutate(\n    mu = case_when(\n      cid == \"1\" ~ `alpha[1]` + `beta_rugged[1]` * (rugged_std - avg_rugged),\n      cid == \"2\" ~ `alpha[2]` + `beta_rugged[2]` * (rugged_std - avg_rugged)\n    ),\n    nice_levels = ifelse(cid == 1, \"African Nation\", \"Non-African Nation\")\n  )\n\nggplot(plot_levels, aes(x = rugged_std, color = nice_levels)) +\n  stat_lineribbon(aes(y = mu, fill = nice_levels)) +\n  geom_point(data = clean_data, aes(y = log_gdp_z)) +\n  facet_wrap(vars(nice_levels)) +\n  xlim(0:1)\n\n\n\n\n\n\n\n\n\nContinous Interactions\n\ndata(\"tulips\", package = \"rethinking\")\n\nclean_tulips &lt;- tulips |&gt;\n  mutate(\n    blooms_std = blooms / max(blooms),\n    water_cent = water - mean(water),\n    shade_cent = shade - mean(shade)\n  )\n\nd_pred &lt;- crossing(\n  water_cent = -1:1,\n  shade_cent = -1:1\n) |&gt;\n  mutate(i = row_number())\n\ncont_int_data &lt;-\n  clean_tulips |&gt;\n  compose_data(\n    w_pred = pull(d_pred, water_cent),\n    s_pred = pull(d_pred, shade_cent),\n    n_pred = nrow(d_pred)\n  )\n\nCool lets define the model\n\ncont_int_model &lt;- \"\n\ndata {\nint &lt;lower=0&gt; n;\nint &lt;lower=0&gt; n_pred;\nvector[n] blooms_std;\nvector[n] shade_cent;\nvector[n] water_cent;\nvector[n_pred] s_pred;\nvector[n_pred] w_pred;\n\n}\nparameters {\nreal alpha;\nreal beta1;\nreal beta2;\nreal beta3;\nreal &lt;lower=0&gt; sigma;\n}\n\nmodel {\n\nblooms_std ~ normal(alpha + beta1 * water_cent + beta2 * shade_cent + beta3.* water_cent .* shade_cent, sigma);\n\nalpha ~ normal(0.5, 0.25);\n\n // long form\n//beta1 ~ normal(0, 0.25);\n\n//beta2 ~ normal(0, 0.25);\n\n//beta3 ~ normal(0, 0.25);\n\n[beta1, beta2, beta3] ~ normal(0, 0.25);\n\nsigma ~ exponential(1);\n\n\n\n}\n\ngenerated quantities {\n\nvector[n_pred] mu ;\nmu = alpha + beta1 * w_pred + beta2 * s_pred + beta3 .* w_pred .* s_pred;\n\n}\n\n\"\n\nwrite_stan_file(\n  cont_int_model,\n  \"linear-regression/stan-scripts\",\n  basename = \"cont-int\"\n)\n\nint_cont_model &lt;- cmdstan_model(\"linear-regression/stan-scripts/cont-int.stan\")\n\nfitted_int_model &lt;- int_cont_model$sample(\n  data = cont_int_data,\n  thin = 1,\n  iter_sampling = 2000,\n  iter_warmup = 1000\n)\n\nCoolio we have the fitted model now its time to extract some things for plots.\n\ndraws_from_int_model &lt;- fitted_int_model$draws(format = \"df\")\n\nplotting_draws &lt;-\n  spread_draws(draws_from_int_model, mu[i]) |&gt;\n  left_join(d_pred, join_by(i)) |&gt;\n  mutate(nice_labs = str_c(\"shade~(centered)==\", shade_cent)) |&gt;\n  ungroup()\n\nggplot(plotting_draws, aes(x = water_cent, y = mu, group = .draw)) +\n  geom_point() +\n  geom_line(alpha = 0.5) +\n  facet_wrap(vars(nice_labs))\n\n\n\n\n\n\n\n\nWhich gets us the plot from the book. Lets look at the diagnostics\n\nbayesplot::mcmc_trace(draws_from_int_model)",
     "crumbs": [
       "Statistical Rethinking",
       "OLS",
-      "Linear Models in CmdStan and"
+      "Linear Models in CmdStan"
     ]
   },
   {
     "objectID": "index.html",
     "href": "index.html",
-    "title": "Learning-Stan",
+    "title": "Home",
     "section": "",
-    "text": "The title of the Website is a little self explanatory"
+    "text": "This is me just figuring out how to use Stan by using some worked examples. Hopefully one day this will be a little more worked out at some point. If you see some areas for improvement or typos just submit an issue."
   },
   {
     "objectID": "bayes-rules/linear-regression/ols.html",
@@ -165,11 +114,40 @@
     "href": "bayes-rules/linear-regression/ols.html#going-crazy",
     "title": "Linear Regression Stan",
     "section": "Going crazy",
-    "text": "Going crazy\nSince we need some practice doing no intercepts and intercepts lets go ahead and do both\n\nfull_mod_no_intercepts &lt;- \"\ndata{\nint &lt;lower=0&gt; n;\nint &lt;lower=1&gt; n_location;\narray[n] int location;\nvector[n] temp3pm;\nvector[n] temp9am_c;\nvector[n] humidity9am_c;\nvector[n] pressure9am_c;\nvector[n] windspeed9am_c;\n}\nparameters {\nreal &lt;lower=0&gt; sigma;\nvector[n_location] beta_location;\nreal beta_temp;\nreal beta_humidity;\nreal beta_pressure;\nreal beta_wind;\n}\ntransformed parameters {\nvector[n] mu;\n\nfor(i in 1:n){\n\nmu[i] = beta_location[location[i]] + beta_temp * temp9am_c[i] + beta_humidity * humidity9am_c[i] + beta_pressure * pressure9am_c[i]+ beta_wind * windspeed9am_c[i];\n\n}\n\n}\n\nmodel {\n\ntemp3pm ~ normal(mu, sigma);\n\nbeta_location ~ normal(0, 10);\n\n[beta_temp, beta_humidity, beta_pressure, beta_wind] ~ normal(0, 2.5);\n\nsigma ~ exponential(1);\n\n\n}\n\ngenerated quantities {\nvector[n] yrep;\n\nfor(i in 1:n){\nyrep[i] = normal_rng(mu[i], sigma);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  full_mod_no_intercepts,\n  dir = \"bayes-rules/linear-regression/stan-scripts/\",\n  basename = \"full-mod\"\n)\n\nfull_mod &lt;- cmdstan_model(\n  \"bayes-rules/linear-regression/stan-scripts/full-mod.stan\"\n)\n\n\nfitted_full_mod &lt;- full_mod$sample(stan_data)\n\npriors &lt;- c(\n  prior(normal(0, 10), class = b, coef = \"locationWollongong\"),\n  prior(normal(0, 10), class = b, coef = \"locationUluru\"),\n  prior(normal(0, 2.5), class = b),\n  prior(exponential(1), class = sigma)\n)\n\nweather_full_brms &lt;- brm(\n  bf(\n    temp3pm ~\n      0 + temp9am_c + humidity9am_c + windspeed9am_c + pressure9am_c + location\n  ),\n  data = weather_WU,\n  family = gaussian(),\n  prior = priors,\n  chains = 4,\n  iter = 5000 * 2,\n  seed = BAYES_SEED,\n  backend = \"cmdstanr\",\n  refresh = 0\n)\n\nNow lets compare\n\ntidy_full_mod &lt;- broom.mixed::tidy(\n  weather_full_brms\n) |&gt;\n  select(term, estimate) |&gt;\n  mutate(\n    term = str_remove(term, \"_c|location\"),\n    term = case_match(\n      term,\n      \"temp9am\" ~ \"temp\",\n      \"humidity9am\" ~ \"humdity\",\n      \"windspeed9am\" ~ \"wind\",\n      \"pressure9am\" ~ \"pressure\",\n      \"Wollongong\" ~ \"Wollongon\",\n      \"Uluru\" ~ \"Uluru\"\n    )\n  ) |&gt;\n  slice(-7) |&gt;\n  arrange(term) |&gt;\n  select(brms = estimate)\n\ncmdstan &lt;- fitted_full_mod$draws(format = \"df\") |&gt;\n  rename(Uluru = `beta_location[1]`, Wollongong = `beta_location[2]`) |&gt;\n  select(Uluru:beta_wind) |&gt;\n  summarise_draws() |&gt;\n  mutate(term = str_remove(variable, \"beta_\")) |&gt;\n  select(term, Cmdstan = mean) |&gt;\n  arrange(term) |&gt;\n  bind_cols(tidy_full_mod)\n\n\nlibrary(tinytable)\n\ntt(cmdstan)\n\nCool our models are like as close to similar as we could want them.",
+    "text": "Going crazy\nSince we need some practice doing no intercepts and intercepts lets go ahead and do both\n\nfull_mod_no_intercepts &lt;- \"\ndata{\nint &lt;lower=0&gt; n;\nint &lt;lower=1&gt; n_location;\narray[n] int location;\nvector[n] temp3pm;\nvector[n] temp9am_c;\nvector[n] humidity9am_c;\nvector[n] pressure9am_c;\nvector[n] windspeed9am_c;\n}\nparameters {\nreal &lt;lower=0&gt; sigma;\nvector[n_location] beta_location;\nreal beta_temp;\nreal beta_humidity;\nreal beta_pressure;\nreal beta_wind;\n}\ntransformed parameters {\nvector[n] mu;\n\nfor(i in 1:n){\n\nmu[i] = beta_location[location[i]] + beta_temp * temp9am_c[i] + beta_humidity * humidity9am_c[i] + beta_pressure * pressure9am_c[i]+ beta_wind * windspeed9am_c[i];\n\n}\n\n}\n\nmodel {\n\ntemp3pm ~ normal(mu, sigma);\n\nbeta_location ~ normal(0, 10);\n\n[beta_temp, beta_humidity, beta_pressure, beta_wind] ~ normal(0, 2.5);\n\nsigma ~ exponential(1);\n\n\n}\n\ngenerated quantities {\nvector[n] yrep;\n\nfor(i in 1:n){\nyrep[i] = normal_rng(mu[i], sigma);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  full_mod_no_intercepts,\n  dir = \"bayes-rules/linear-regression/stan-scripts/\",\n  basename = \"full-mod\"\n)\n\nfull_mod &lt;- cmdstan_model(\n  \"bayes-rules/linear-regression/stan-scripts/full-mod.stan\"\n)\n\n\nfitted_full_mod &lt;- full_mod$sample(stan_data)\n\npriors &lt;- c(\n  prior(normal(0, 10), class = b, coef = \"locationWollongong\"),\n  prior(normal(0, 10), class = b, coef = \"locationUluru\"),\n  prior(normal(0, 2.5), class = b),\n  prior(exponential(1), class = sigma)\n)\n\nweather_full_brms &lt;- brm(\n  bf(\n    temp3pm ~\n      0 + temp9am_c + humidity9am_c + windspeed9am_c + pressure9am_c + location\n  ),\n  data = weather_WU,\n  family = gaussian(),\n  prior = priors,\n  chains = 4,\n  iter = 5000 * 2,\n  seed = 2,\n  backend = \"cmdstanr\",\n  refresh = 0\n)\n\nNow lets compare\n\ntidy_full_mod &lt;- broom.mixed::tidy(\n  weather_full_brms\n) |&gt;\n  select(term, estimate) |&gt;\n  mutate(\n    term = str_remove(term, \"_c|location\"),\n    term = case_match(\n      term,\n      \"temp9am\" ~ \"temp\",\n      \"humidity9am\" ~ \"humdity\",\n      \"windspeed9am\" ~ \"wind\",\n      \"pressure9am\" ~ \"pressure\",\n      \"Wollongong\" ~ \"Wollongon\",\n      \"Uluru\" ~ \"Uluru\"\n    )\n  ) |&gt;\n  slice(-7) |&gt;\n  arrange(term) |&gt;\n  select(brms = estimate)\n\ncmd &lt;- fitted_full_mod$draws(format = \"df\") |&gt;\n  rename(Uluru = `beta_location[1]`, Wollongong = `beta_location[2]`) |&gt;\n  select(Uluru:beta_wind) |&gt;\n  summarise_draws() |&gt;\n  mutate(term = str_remove(variable, \"beta_\")) |&gt;\n  select(term, Cmdstan = mean) |&gt;\n  arrange(term) |&gt;\n  bind_cols(tidy_full_mod)\n\n\nlibrary(tinytable)\n\nt &lt;- tt(cmd)\n\n\nt\n\nCool our models are like as close to similar as we could want them.",
     "crumbs": [
       "Bayes Rules",
       "Reading Note",
       "Linear Regression Stan"
+    ]
+  },
+  {
+    "objectID": "bayes-rules/count-models/count-models.html",
+    "href": "bayes-rules/count-models/count-models.html",
+    "title": "Count Models in Cmd Stan",
+    "section": "",
+    "text": "library(bayesrules)\nlibrary(tidyverse)\nlibrary(brms)\nlibrary(cmdstanr)\nlibrary(broom.mixed)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(patchwork)\nlibrary(ggtext)\n\n\ndata(equality_index, package = \"bayesrules\")\n\nequality &lt;- equality_index |&gt;\n  # Omit California because it has so many laws already\n  filter(state != \"california\")\n\nstan_dat &lt;- model.matrix(~ 1 + percent_urban + historical, data = equality)[,\n  -1\n]\n\nWell its fun that we have one example to work off of. So lets start there\n\nfirst_count &lt;- \"\ndata {\nint &lt;lower = 0&gt; n;\nint &lt;lower = 0&gt; k;\nmatrix[n,k] x;\narray[n] int laws;\n}\nparameters {\nreal alpha;\nvector[k] beta;\n\n}\nmodel {\n\nlaws ~ poisson_log_glm(x, alpha, beta);\nalpha ~ normal(2, 0.5 );\nbeta[1] ~ student_t(2, 0, 1);\nbeta[2] ~ student_t(2, -0.5, 2);\nbeta[3] ~ student_t(2, 0, 2);\n\n\n}\ngenerated quantities {\narray[n] int y_rep;\nvector[n] log_lik;\nvector[n] lambda_hat = alpha  + x * beta;\nfor(i in 1:n){\n\nlog_lik[i] = poisson_log_glm_lpmf({laws[i]} | x[i,], alpha, beta);\n\ny_rep[i] = poisson_log_rng(lambda_hat[i]);\n\n}\n\n\n}\n\"\n\nwrite_stan_file(\n  first_count,\n  \"bayes-rules/count-models/stan-scripts/\",\n  basename = \"first-count\"\n)\n\ncount_mod1 &lt;- cmdstan_model(\n  \"bayes-rules/count-models/stan-scripts/first-count.stan\"\n)\n\nfitted_mod &lt;- count_mod1$sample(\n  data = list(\n    n = nrow(equality),\n    laws = equality$laws,\n    x = stan_dat,\n    k = ncol(stan_dat)\n  )\n)\n\n\nfitted_mod$summary()\n\nEhh while it is slightly more concise it is a little less readable. If we follow along with Andrew he goes through a lot of interpretation stuff. Some of which we can do others that we can’t do because of the current skill issue. The thing with the Poisson is that well we may a somewhat unrealistic assumption that we have equal means and variances conditionally and unconditionally which generally doesn’t hold for count processes (in political science). Frequently this assumption is violated because we have a lot of zeros.\nThe example that Andrew uses just uses the",
+    "crumbs": [
+      "Bayes Rules",
+      "Reading Note",
+      "Count Models in Cmd Stan"
+    ]
+  },
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "About",
+    "section": "",
+    "text": "About this site"
+  },
+  {
+    "objectID": "bayes-rules/index.html",
+    "href": "bayes-rules/index.html",
+    "title": "Bayes Rules",
+    "section": "",
+    "text": "This is me following along with Andrew Heiss’s Bayes Rules code and redoing as much as I can in cmdstanr",
+    "crumbs": [
+      "Bayes Rules"
     ]
   },
   {
@@ -182,6 +160,28 @@
       "Bayes Rules",
       "Reading Note",
       "Logits in Stan"
+    ]
+  },
+  {
+    "objectID": "rethinking/index.html",
+    "href": "rethinking/index.html",
+    "title": "Statistical Rethinking",
+    "section": "",
+    "text": "This is me following along with Solomon Kurz’s translation of Statistical Rethinking",
+    "crumbs": [
+      "Statistical Rethinking"
+    ]
+  },
+  {
+    "objectID": "rethinking/logit/logit.html",
+    "href": "rethinking/logit/logit.html",
+    "title": "Logit in CmdStanr",
+    "section": "",
+    "text": "For the glms we have to lean a little more on the array syntax to get our work done.\n\nset.seed(1994)\n\nlibrary(cmdstanr)\nlibrary(tidybayes)\nlibrary(ggdist)\nlibrary(posterior)\nlibrary(tidyverse)\n\ndata(\"chimpanzees\", package = \"rethinking\")\n\nclean_chimp &lt;- chimpanzees |&gt;\n  mutate(\n    treatment = factor(1 + prosoc_left + 2 * condition),\n    labels = factor(\n      treatment,\n      levels = 1:4,\n      labels = c(\"r/n\", \"l/n\", \"r/p\", \"l/p\")\n    )\n  )\n\nCool lets prep the model. Really anytime we use something that is not a number we can use the array syntax. The n_variable pops up in the parameters argument. So you have to marry the n_variable with the parameter.\n\npreds_data &lt;- clean_chimp |&gt;\n  distinct(actor, prosoc_left, condition, treatment, labels)\n\nstan_data &lt;- clean_chimp |&gt;\n  select(actor, treatment, pulled_left) |&gt;\n  compose_data(\n    n_actor = n_distinct(actor),\n    n_treatment = n_distinct(treatment),\n    n_pred = nrow(preds_data),\n    pred_actor = preds_data$treatment,\n    pred_treatment = preds_data$treatment\n  )\n\nglm_model &lt;- \"\ndata {\nint &lt;lower=1&gt; n;\nint &lt;lower=1&gt; n_pred;\nint &lt;lower=1&gt; n_treatment;\nint &lt;lower=1&gt; n_actor;\narray[n] int actor;\narray[n] int treatment;\narray[n_pred] int pred_treatment;\narray[n_pred] int pred_actor;\narray[n] int&lt;lower =0, upper=1&gt; pulled_left;\n\n}\n\nparameters {\nvector[n_actor] alpha;\nvector[n_treatment] beta;\n\n}\n\nmodel {\npulled_left ~ binomial(1, inv_logit(alpha[actor] + beta[treatment]));\n\nalpha ~ normal(0, 1.5);\n\nbeta ~ normal(0, 0.5);\n\n}\n\ngenerated quantities {\n\nvector[n] log_lik;\nvector[n_pred] preds;\n\npreds = inv_logit(alpha[pred_actor] + beta[pred_treatment]);\n\nfor(i in 1:n) log_lik[i] = binomial_lpmf(pulled_left[i] | 1, inv_logit(alpha[actor[i]] + beta[treatment[i]]));\n\n\n}\n\n\"\n\nwrite_stan_file(glm_model, dir = \"logit/stan-scripts/\", basename = \"logit-mod\")\n\nlogit_mod &lt;- cmdstan_model(\"logit/stan-scripts/logit-mod.stan\")\n\n\nfitted_mod &lt;- logit_mod$sample(data = stan_data, iter_sampling = 2000)\n\nOne thing that is worth doing more in vscode is writing the stan file separately because I specified a likelihood that was technically possible to specify but stan threw a lot of warnings.\n\ndraws_logit &lt;- fitted_mod$draws(format = \"df\")\n\n\np2 &lt;- draws_logit |&gt;\n  spread_draws(preds[i]) |&gt;\n  left_join(\n    preds_data |&gt;\n      mutate(i = 1:n()),\n    by = join_by(i)\n  ) |&gt;\n  mutate(actor = str_c(\"actor \", actor), condition = factor(condition)) |&gt;\n  group_by(actor, prosoc_left, condition, treatment, labels) |&gt;\n  mean_qi(preds, .width = 0.89)\n\n\nggplot(p2, aes(x = labels, y = preds)) +\n  geom_line(aes(group = prosoc_left), linewidth = 0.25) +\n  geom_pointinterval(\n    aes(, ymin = .lower, ymax = .upper, fill = condition),\n    linewidth = 1\n  ) +\n  facet_grid(vars(\"Posterior Predicitions\"), vars(actor))\n\n\n\n\n\n\n\n\nThis model uses the inv_logit function which will just put things on the probability scale.\n\nlibrary(brms)\n\np &lt;- c(prior(normal(0, 1.5), nlpar = a), prior(normal(0, 0.5), nlpar = b))\n\n\nex &lt;- brm(\n  bf(\n    pulled_left | trials(1) ~ a + b,\n    a ~ 0 + actor,\n    b ~ 0 + treatment,\n    nl = TRUE\n  ),\n  data = clean_chimp,\n  prior = p,\n  family = binomial(),\n  iter = 2000\n)\n\nIf we look at the outputs from the model\n\ncmd_mod &lt;- fitted_mod$summary(\"beta\") |&gt;\n  as_tibble() |&gt;\n  mutate(API = \"CmdStanr\") |&gt;\n  select(estimate = mean, API, term = variable)\n\nbrms_mod &lt;- broom.mixed::tidy(ex) |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(\n    API = \"Brms\"\n  ) |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod)\n\ntinytable::tt(brms_mod)\n\nIf we rescale the parameter we get this\n\nex |&gt;\n  broom.mixed::tidy() |&gt;\n  filter(str_detect(term, \"b\")) |&gt;\n  mutate(estimate = inv_logit_scaled(estimate), API = \"Brms\") |&gt;\n  select(estimate, API, term) |&gt;\n  bind_rows(cmd_mod) |&gt;\n  tinytable::tt()\n\n\ndata(\"UCBadmit\", package = \"rethinking\")\n\nclean_admit &lt;- UCBadmit |&gt;\n  mutate(\n    gid = ifelse(applicant.gender == \"male\", 1, 2),\n    gid = as.factor(gid),\n    case = row_number(),\n    case = as.factor(case)\n  )\n\nstan_admit_data &lt;- clean_admit |&gt;\n  select(dept, gid, admit, applications) |&gt;\n  compose_data()\n\n\nadmissions_mod &lt;- \"\ndata {\nint &lt;lower = 1&gt; n;\nint &lt;lower = 1&gt; n_dept;\nint &lt;lower = 1&gt; n_gid;\narray[n] int gid;\n  array[n] int dept;\n  array[n] int applications;\n  array[n] int&lt;lower=0&gt; admit;\n\n}\n\nparameters {\nvector[n_gid] alpha;\nvector[n_dept] beta;\n\n}\nmodel {\n\nadmit ~ binomial(applications, inv_logit(alpha[gid] + beta[dept]));\n\ngid ~ normal(0, 1.5);\n\ndept ~ normal(0, 1.5);\n\n\n}\n\n\n\"\n\nwrite_stan_file(\n  admissions_mod,\n  \"logit/stan-scripts/\",\n  basename = \"admissions-mod\"\n)\n\nad_mod &lt;- cmdstan_model(\"logit/stan-scripts/admissions-mod.stan\")\n\nfitted_ad_mod &lt;- ad_mod$sample(\n  data = stan_admit_data,\n  iter_sampling = 4000\n)",
+    "crumbs": [
+      "Statistical Rethinking",
+      "Logit",
+      "Logit in CmdStanr"
     ]
   }
 ]
